@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google TPUs 12 &mdash; TPU vs GPU, Two Architectural Philosophies</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg-primary:#0a0a0a; --bg-card:#0d1117; --bg-code:#161b22; --text-primary:#e6edf3; --text-secondary:#8b949e; --accent:#4285F4; --accent-dim:#4285F444; --accent-glow:#4285F433; --accent-2:#76B900; --accent-3:#FBBC04; --accent-4:#34A853; --border:#21262d; --font-display:'Space Grotesk',sans-serif; --font-mono:'JetBrains Mono','Fira Code',monospace; --font-body:'Inter',sans-serif; --max-width:900px; }
+        *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+        html { scroll-behavior:smooth; }
+        body { background:var(--bg-primary); color:var(--text-primary); font-family:var(--font-body); font-size:17px; line-height:1.7; overflow-x:hidden; }
+        .hero { min-height:100vh; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:2rem 1.5rem; text-align:center; position:relative; }
+        .hero::before { content:''; position:absolute; top:0; left:30%; transform:translateX(-50%); width:500px; height:600px; background:radial-gradient(circle,rgba(66,133,244,0.20) 0%,transparent 70%); pointer-events:none; z-index:0; }
+        .hero::after { content:''; position:absolute; top:0; left:70%; transform:translateX(-50%); width:500px; height:600px; background:radial-gradient(circle,rgba(118,185,0,0.18) 0%,transparent 70%); pointer-events:none; z-index:0; }
+        .hero > * { position:relative; z-index:1; }
+        .series-label { font-family:var(--font-mono); font-size:0.85rem; color:var(--accent); letter-spacing:0.15em; text-transform:uppercase; margin-bottom:1rem; }
+        .hero h1 { font-family:var(--font-display); font-size:clamp(2rem,5vw,3.2rem); font-weight:700; line-height:1.2; margin-bottom:1rem; }
+        .hero h1 .tpu { color:var(--accent); }
+        .hero h1 .gpu { color:var(--accent-2); }
+        .hero .subtitle { font-size:1.1rem; color:var(--text-secondary); max-width:680px; margin-bottom:2rem; }
+        .tags { display:flex; flex-wrap:wrap; gap:0.5rem; justify-content:center; margin-bottom:2.5rem; }
+        .tag { font-family:var(--font-mono); font-size:0.75rem; padding:0.25rem 0.75rem; border-radius:999px; border:1px solid var(--accent); color:var(--accent); background:var(--accent-dim); }
+        .tag.gpu { border-color:var(--accent-2); color:var(--accent-2); background:rgba(118,185,0,0.10); }
+        .pipeline { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:0.25rem; margin-bottom:1rem; max-width:var(--max-width); }
+        .pipeline-step { font-family:var(--font-mono); font-size:0.7rem; padding:0.3rem 0.7rem; background:var(--bg-card); border:1px solid var(--border); border-radius:4px; color:var(--text-secondary); }
+        .pipeline-arrow { color:var(--accent); font-size:0.9rem; font-weight:700; }
+        .slide { min-height:100vh; max-width:var(--max-width); margin:0 auto; padding:4rem 1.5rem; position:relative; display:flex; flex-direction:column; justify-content:center; }
+        .slide-number { font-family:var(--font-display); font-size:5rem; font-weight:700; color:var(--accent-dim); position:absolute; top:2rem; right:1.5rem; line-height:1; }
+        .slide h2 { font-family:var(--font-display); font-size:1.9rem; font-weight:700; color:var(--accent); margin-bottom:1.5rem; line-height:1.25; }
+        .slide h3 { font-family:var(--font-display); font-size:1.3rem; font-weight:600; color:var(--text-primary); margin-top:1.5rem; margin-bottom:0.75rem; }
+        .slide p { margin-bottom:1rem; color:var(--text-secondary); }
+        .slide p strong { color:var(--text-primary); }
+        .slide ul, .slide ol { margin-bottom:1rem; padding-left:1.5rem; color:var(--text-secondary); }
+        .slide li { margin-bottom:0.4rem; }
+        .slide li strong { color:var(--text-primary); }
+        .table-wrap { overflow-x:auto; margin:1.25rem 0; border-radius:8px; border:1px solid var(--border); }
+        table { width:100%; border-collapse:collapse; font-size:0.9rem; }
+        th { background:var(--bg-code); color:var(--accent); font-weight:600; text-align:left; padding:0.75rem 1rem; border-bottom:1px solid var(--border); font-family:var(--font-display); white-space:nowrap; }
+        td { padding:0.6rem 1rem; border-bottom:1px solid var(--border); color:var(--text-secondary); vertical-align:top; }
+        tr:last-child td { border-bottom:none; }
+        tr:nth-child(even) td { background:rgba(13,17,23,0.5); }
+        .compare { display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; margin:1.25rem 0; padding:1.25rem; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; }
+        .compare .col { padding:1rem; background:var(--bg-code); border-radius:6px; }
+        .compare .col.tpu { border-left:3px solid var(--accent); }
+        .compare .col.gpu { border-left:3px solid var(--accent-2); }
+        .compare .col h4 { font-family:var(--font-display); margin-bottom:0.5rem; }
+        .compare .col.tpu h4 { color:var(--accent); }
+        .compare .col.gpu h4 { color:var(--accent-2); }
+        .compare ul { font-size:0.9rem; padding-left:1.2rem; }
+        .compare li { margin-bottom:0.3rem; }
+        .callout { background:var(--bg-card); border-left:3px solid var(--accent); border-radius:0 8px 8px 0; padding:1rem 1.25rem; margin:1.25rem 0; }
+        .callout p { margin-bottom:0; }
+        .callout .callout-label { font-family:var(--font-mono); font-size:0.75rem; color:var(--accent); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:0.3rem; }
+        .canvas-wrap { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:1rem; margin:1.25rem 0; overflow-x:auto; }
+        .contents-list { list-style:none; padding-left:0; counter-reset:contents; }
+        .contents-list li { counter-increment:contents; padding:0.6rem 0; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:1rem; }
+        .contents-list li:last-child { border-bottom:none; }
+        .contents-list li::before { content:counter(contents,decimal-leading-zero); font-family:var(--font-mono); font-size:0.85rem; color:var(--accent); min-width:2rem; }
+        .contents-list a { color:var(--text-primary); text-decoration:none; }
+        .contents-list a:hover { color:var(--accent); }
+        .footer { text-align:center; padding:3rem 1.5rem; color:var(--text-secondary); font-size:0.85rem; border-top:1px solid var(--border); max-width:var(--max-width); margin:0 auto; }
+        .footer a { color:var(--accent); text-decoration:none; }
+        @media (max-width:640px) { .slide { padding:3rem 1rem; min-height:auto; } .slide-number { font-size:3rem; top:1.5rem; right:1rem; } .slide h2 { font-size:1.5rem; } .compare { grid-template-columns:1fr; } .hero h1 { font-size:1.8rem; } table { font-size:0.78rem; } }
+    </style>
+</head>
+<body>
+
+<header class="hero">
+    <div class="series-label">Google TPUs Series &mdash; Presentation 12</div>
+    <h1><span class="tpu">TPU</span> vs <span class="gpu">GPU</span> &mdash; Two Architectural Philosophies</h1>
+    <p class="subtitle">Static-compiler scheduling vs dynamic warp scheduling. Scratchpad vs cache. AOT graph vs JIT kernel. 3D torus vs fat-tree InfiniBand. Cloud-only vs everywhere. The same workload, two answers.</p>
+    <div class="tags">
+        <span class="tag">XLA AOT</span><span class="tag">VMEM scratchpad</span>
+        <span class="tag">3D torus + OCS</span>
+        <span class="tag gpu">CUDA JIT</span><span class="tag gpu">L1/L2 cache</span>
+        <span class="tag gpu">NVLink + InfiniBand</span>
+    </div>
+    <div class="pipeline">
+        <span class="pipeline-step">same workload</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">two architectures</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">two software stacks</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">two pod fabrics</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">different wins / losses</span>
+    </div>
+</header>
+
+<section class="slide" id="slide-00">
+    <div class="slide-number">00</div>
+    <h2>Topics We'll Cover</h2>
+    <ul class="contents-list">
+        <li><a href="#slide-01">Two Different Starting Premises</a></li>
+        <li><a href="#slide-02">Compute Granularity</a></li>
+        <li><a href="#slide-03">Scheduling: Static Compiler vs Dynamic Warp</a></li>
+        <li><a href="#slide-04">Memory: Scratchpad vs Cache</a></li>
+        <li><a href="#slide-05">Compilation: AOT Graph vs JIT Kernel</a></li>
+        <li><a href="#slide-06">Pod Fabric: 3D Torus + OCS vs NVLink + IB</a></li>
+        <li><a href="#slide-07">Numerics &amp; Precision</a></li>
+        <li><a href="#slide-08">Where TPU Wins</a></li>
+        <li><a href="#slide-09">Where GPU Wins</a></li>
+        <li><a href="#slide-10">The Cloud-Only Constraint</a></li>
+        <li><a href="#slide-11">Convergence in 2026</a></li>
+        <li><a href="#slide-12">Cheat Sheet</a></li>
+    </ul>
+</section>
+
+<section class="slide" id="slide-01">
+    <div class="slide-number">01</div>
+    <h2>Two Different Starting Premises</h2>
+    <div class="compare">
+        <div class="col tpu">
+            <h4>TPU &mdash; "we know the workload"</h4>
+            <ul>
+                <li>Designed in 2013&ndash;14 around a known-and-stable workload: dense matmul, low-precision integers, pre-Transformer.</li>
+                <li>Compiler-first; chip is dumb, the toolchain is smart.</li>
+                <li>Statically scheduled, software-managed memory.</li>
+                <li>One vendor, one cloud, one customer (Google) for the first three generations.</li>
+                <li>Single workload class; specialise relentlessly.</li>
+            </ul>
+        </div>
+        <div class="col gpu">
+            <h4>GPU &mdash; "we don't know the workload"</h4>
+            <ul>
+                <li>Originated as 1990s graphics processors; ML usage came as a happy accident in 2009&ndash;12.</li>
+                <li>Hardware-first; many cores, fast switchers, robust to whatever code you throw at it.</li>
+                <li>Dynamically scheduled, hardware-managed cache.</li>
+                <li>Many vendors (NVIDIA, AMD, Intel), many platforms (gaming, HPC, ML, crypto, video).</li>
+                <li>Many workload classes; generalise across all of them.</li>
+            </ul>
+        </div>
+    </div>
+
+    <p>Both architectures reached "AI accelerator" status, but from opposite directions. The TPU started as an ASIC and grew toward generality (vector unit in v2, embedding accelerator in v4, FP8 in v7). The GPU started as a generalist and grew toward specialisation (tensor cores in V100, FP8 in H100, FP4 in B200). <strong>By 2026 they converge structurally; the philosophical difference persists in what "performance" means.</strong></p>
+
+    <div class="callout">
+        <div class="callout-label">A useful question to ask</div>
+        <p>"What does the chip do when it's <em>idle?</em>" GPU: nothing &mdash; the warp scheduler is waiting for ready warps, the SMs sleep, caches retain whatever was there. TPU: literally the program told it to stall &mdash; every cycle is on the schedule, so an idle cycle is a compiler decision. This dichotomy explains a lot of downstream behaviour.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-02">
+    <div class="slide-number">02</div>
+    <h2>Compute Granularity</h2>
+    <div class="compare">
+        <div class="col tpu">
+            <h4>A few huge MXUs</h4>
+            <ul>
+                <li>Per chip: 2 TensorCores &times; 4 MXUs &times; 128&times;128 = <strong>8 systolic arrays of 16,384 MACs each</strong> (v4/v5p/Ironwood class).</li>
+                <li>Total: ~131,000 MACs per chip, all running in lockstep.</li>
+                <li>One thread of control per TensorCore, dispatched by XLA-emitted VLIW.</li>
+                <li>Few but huge units &mdash; the philosophy is "make the array as big as physically possible and feed it perfectly".</li>
+            </ul>
+        </div>
+        <div class="col gpu">
+            <h4>Many small SMs</h4>
+            <ul>
+                <li>Per H100: 132 SMs, each with 4 tensor cores, plus FP/INT pipelines.</li>
+                <li>Per B200 (dual-die): 208 SMs total.</li>
+                <li>Tens of thousands of warps in flight across all SMs.</li>
+                <li>Each tensor core is a smaller MMA block (e.g. 16&times;16&times;16 on Hopper wgmma).</li>
+                <li>Many small units &mdash; the philosophy is "have so many independent execution contexts that something is always ready".</li>
+            </ul>
+        </div>
+    </div>
+
+    <h3>The implication for utilisation</h3>
+    <p>A TPU MXU achieves its peak only on contractions deep enough to amortise pipeline fill (slide 10 of deck 03). A GPU SM achieves its peak as soon as enough warps are resident; the warp scheduler can usually find one. <strong>TPUs are easier to underutilise than GPUs for short or irregular kernels.</strong> Conversely, when the workload <em>is</em> long dense matmul, the TPU's lockstep array is more efficient than 132 small ones with their associated control overhead.</p>
+</section>
+
+<section class="slide" id="slide-03">
+    <div class="slide-number">03</div>
+    <h2>Scheduling: Static Compiler vs Dynamic Warp</h2>
+    <div class="compare">
+        <div class="col tpu">
+            <h4>Static, compiler-issued (TPU)</h4>
+            <ul>
+                <li>XLA emits a VLIW-style schedule for each TensorCore.</li>
+                <li>Every cycle: scalar unit reads instructions, dispatches to MXU, vector unit, ICI engine.</li>
+                <li>No branch predictor, no speculation, no out-of-order.</li>
+                <li>Latency hidden by software-pipelined DMA: <code>load_next_tile</code> in cycle N, <code>compute_this_tile</code> in cycle N (overlapped).</li>
+                <li>Performance is deterministic: the same input takes the same number of cycles every time.</li>
+            </ul>
+        </div>
+        <div class="col gpu">
+            <h4>Dynamic, hardware-issued (GPU)</h4>
+            <ul>
+                <li>Each SM has 4 warp schedulers; each picks one of dozens of resident warps every cycle.</li>
+                <li>Warps are fired and replaced as their data arrives.</li>
+                <li>Latency hidden by warp swapping: while warp A waits for memory, warp B runs.</li>
+                <li>The hardware figures out parallelism at runtime.</li>
+                <li>Performance is variable: scheduling decisions depend on cache state and contention.</li>
+            </ul>
+        </div>
+    </div>
+
+    <h3>Why this matters</h3>
+    <ul>
+        <li><strong>Determinism:</strong> the TPU's static schedule means the same training step takes exactly the same number of cycles every run. The bit-exactness story is much cleaner. Reproducibility for distributed training is structurally easier.</li>
+        <li><strong>Compile cost:</strong> changing tensor shapes triggers an XLA recompile; first-call cost can be minutes. GPU kernels are pre-compiled or JIT'd by the driver but kernel launch is microseconds.</li>
+        <li><strong>Profiling:</strong> a TPU has nowhere to hide. If a workload underperforms, the compiler's schedule shows exactly why. GPU profiling has more sources of variability.</li>
+    </ul>
+</section>
+
+<section class="slide" id="slide-04">
+    <div class="slide-number">04</div>
+    <h2>Memory: Scratchpad vs Cache</h2>
+    <div class="compare">
+        <div class="col tpu">
+            <h4>Software-managed scratchpads</h4>
+            <ul>
+                <li>VMEM (~32&ndash;64 MiB per TensorCore): software-managed, no tags, no replacement policy.</li>
+                <li>CMEM (~128 MiB shared, since v4i): cache-like but XLA-controlled.</li>
+                <li>Working set is statically planned by the compiler for each kernel.</li>
+                <li>Latency is predictable; misses don't exist (if it's not there, the compiler had to load it).</li>
+                <li>Density wins: SRAM cells without tag overhead pack tighter.</li>
+            </ul>
+        </div>
+        <div class="col gpu">
+            <h4>Conventional cache hierarchy</h4>
+            <ul>
+                <li>L1 / shared memory (192 KB per SM on H100): partly programmable, partly cache.</li>
+                <li>L2 (60 MB on H100, larger on B200): hardware-managed.</li>
+                <li>Working set discovered at runtime; cache fills on access.</li>
+                <li>Latency variable: hits are fast, misses are slow.</li>
+                <li>Generality wins: no compiler effort, any workload benefits from caching.</li>
+            </ul>
+        </div>
+    </div>
+
+    <p>The Hopper Tensor Memory Accelerator (TMA) is a step toward the TPU's model: explicit asynchronous DMA into shared memory, scheduled by the kernel. <strong>NVIDIA is moving toward more software-managed memory; Google has been moving toward more cache-like behaviour. The lines are converging.</strong></p>
+</section>
+
+<section class="slide" id="slide-05">
+    <div class="slide-number">05</div>
+    <h2>Compilation: AOT Graph vs JIT Kernel</h2>
+    <div class="compare">
+        <div class="col tpu">
+            <h4>Whole-graph AOT (TPU)</h4>
+            <ul>
+                <li>The user's Python code is traced into one big HLO graph.</li>
+                <li>XLA optimises the whole graph: cross-kernel fusion, layout assignment, sharding inference.</li>
+                <li>The graph is compiled <em>ahead of time</em> (before the first execution).</li>
+                <li>Result: one big binary with thousands of fused kernels, called by Pathways.</li>
+                <li>Recompile triggered by shape or sharding changes.</li>
+            </ul>
+        </div>
+        <div class="col gpu">
+            <h4>Per-kernel JIT (GPU)</h4>
+            <ul>
+                <li>Each ML op (matmul, layernorm, softmax) is a hand-tuned CUDA kernel from cuBLAS / cuDNN / FlashAttention.</li>
+                <li>Kernels are pre-compiled to PTX, JIT'd to SASS by the driver at first launch.</li>
+                <li>Framework (PyTorch, JAX-on-GPU) dispatches kernels one at a time.</li>
+                <li>Optimisation across kernels is the framework's responsibility, not the compiler's.</li>
+                <li>Triton / TorchInductor / CUTLASS provide more whole-graph compilation paths but the default is still per-kernel.</li>
+            </ul>
+        </div>
+    </div>
+
+    <h3>The fusion advantage of TPU</h3>
+    <p>XLA can fuse a Transformer block's <code>matmul &rarr; bias_add &rarr; layernorm &rarr; softmax</code> into a few kernels with intermediate values living in VMEM. PyTorch eager mode runs each op as a separate kernel with intermediate values in HBM &mdash; orders of magnitude more memory traffic. Hence <code>torch.compile</code>: PyTorch is moving toward graph-level compilation specifically to close this gap.</p>
+
+    <div class="callout">
+        <div class="callout-label">The pragmatic choice in 2026</div>
+        <p>For a JAX user on TPU: graph compilation is automatic and transparent. For a PyTorch user on GPU: <code>torch.compile</code> is increasingly required for performance, but adds its own debugging complications. <strong>The TPU has had an integrated whole-graph compiler since 2017; the GPU world is still catching up.</strong></p>
+    </div>
+</section>
+
+<section class="slide" id="slide-06">
+    <div class="slide-number">06</div>
+    <h2>Pod Fabric: 3D Torus + OCS vs NVLink + IB</h2>
+    <div class="compare">
+        <div class="col tpu">
+            <h4>TPU pod (Ironwood)</h4>
+            <ul>
+                <li>9,216 chips in one ICI-coherent domain.</li>
+                <li>Custom electrical SerDes, hardware all-reduce in the link controller.</li>
+                <li>3D torus, with Palomar OCS for inter-cube reconfigurability.</li>
+                <li>Per-chip ICI: 1.2 TB/s bidir.</li>
+                <li>Pod aggregate ICI: ~10+ PB/s bisection.</li>
+                <li>Sub-microsecond chip-to-chip latency for any neighbour.</li>
+            </ul>
+        </div>
+        <div class="col gpu">
+            <h4>GPU pod (NVL72 + IB)</h4>
+            <ul>
+                <li>72 GPUs in one NVLink domain (NVL72 rack).</li>
+                <li>NVLink-Switch fabric, NVLink 5 at 1.8 TB/s per GPU.</li>
+                <li>Beyond the rack: ConnectX-8 InfiniBand at ~800 Gbps per HCA.</li>
+                <li>Bisection at the InfiniBand layer is fat-tree; bandwidth depends on topology.</li>
+                <li>NVLink hop latency &lt; 1 &mu;s; IB hop latency 1&ndash;3 &mu;s.</li>
+                <li>For frontier training: typically 8&times;NVL72 = 576 GPUs, then InfiniBand.</li>
+            </ul>
+        </div>
+    </div>
+
+    <h3>The scale-up gap</h3>
+    <p>NVL72 is NVIDIA's biggest single-system scale-up: 72 GPUs sharing NVLink. Ironwood at 9,216 chips is two orders of magnitude larger. <strong>For tensor-parallel attention with very long sequences, where you want all-reduce latency to be sub-millisecond, the TPU pod has no peer.</strong> NVIDIA's Rubin generation will push NVL up further (rumoured 144 or higher) but won't close the gap entirely &mdash; OCS-based reconfigurability is fundamentally cheaper to scale than NVLink-Switch silicon.</p>
+</section>
+
+<section class="slide" id="slide-07">
+    <div class="slide-number">07</div>
+    <h2>Numerics &amp; Precision</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Format</th><th>TPU support</th><th>NVIDIA support</th></tr></thead>
+            <tbody>
+                <tr><td>FP32</td><td>vector unit; FP32 accumulator</td><td>Yes (FMA pipeline + FP32 tensor core path)</td></tr>
+                <tr><td>TF32</td><td>No (Google chose bf16 instead)</td><td>Yes since Ampere</td></tr>
+                <tr><td>FP16</td><td>Limited; not preferred for training</td><td>Yes since Volta (the original tensor core format)</td></tr>
+                <tr><td>bfloat16</td><td>Native since v2 (2017)</td><td>Native since Ampere (2020) &mdash; <em>following Google's lead</em></td></tr>
+                <tr><td>INT8</td><td>v1 native; v5e+ tensor cores</td><td>Yes since Turing (2018)</td></tr>
+                <tr><td>INT4</td><td>No first-class support</td><td>Yes since Turing</td></tr>
+                <tr><td>FP8 (E4M3 / E5M2)</td><td>Native on v5p (some path) and Ironwood</td><td>Native since Hopper (2022) &mdash; ahead of TPU</td></tr>
+                <tr><td>FP4 / MXFP4 / NVFP4</td><td>Not yet shipped</td><td>Native on Blackwell (2024)</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h3>The pattern</h3>
+    <ul>
+        <li><strong>Google led on bfloat16</strong> &mdash; the only major numeric format the AI industry adopted from the TPU.</li>
+        <li><strong>NVIDIA led on FP8 and FP4</strong> &mdash; same OCP standards, but TPU follows by ~1 generation.</li>
+        <li>Both architectures use FP32 accumulators below the headline numeric, for the same numerical-stability reasons.</li>
+        <li>The "halve precision, double FLOPS" lever has been pulled three times so far. Future formats below FP4 (1.58-bit ternary, binary?) are research-grade for now.</li>
+    </ul>
+</section>
+
+<section class="slide" id="slide-08">
+    <div class="slide-number">08</div>
+    <h2>Where TPU Wins</h2>
+    <ul>
+        <li><strong>Dense matmul-heavy workloads at long contractions.</strong> The systolic array's structural fit is most apparent on transformer FFN layers and big embedding multiplications.</li>
+        <li><strong>Pod-scale all-reduce.</strong> ICI's hardware all-reduce on a 3D torus is the most efficient single-job-spanning-thousands-of-chips collective in production.</li>
+        <li><strong>Deterministic training.</strong> Static scheduling means identical results across runs &mdash; valuable for reproducibility, debugging, and bit-exactness in distributed pipelines.</li>
+        <li><strong>Fleet inference of dense models.</strong> e-class TPUs (v5e, Trillium) hit very competitive perf/$ for serving 7B&ndash;70B-parameter models &mdash; especially when SparseCore handles MoE routing.</li>
+        <li><strong>Long-context inference.</strong> Ironwood's 192 GiB HBM3e at 7.4 TB/s holds enormous KV caches without all-reduce roundtrips.</li>
+        <li><strong>Liquid cooling at unprecedented scale.</strong> Google's been doing it since 2018; the operational expertise compounds.</li>
+        <li><strong>Cost-effective ML training for a single tenant.</strong> If you can fit your job on one pod, the per-FLOP cost is competitive or lower than GPU equivalents.</li>
+    </ul>
+</section>
+
+<section class="slide" id="slide-09">
+    <div class="slide-number">09</div>
+    <h2>Where GPU Wins</h2>
+    <ul>
+        <li><strong>Sparse, irregular, dynamic-shape workloads.</strong> Anything where the kernel boundaries shift at runtime (graph neural nets with variable structure, RL with rollout-dependent batch sizes) &mdash; the GPU's dynamic warp scheduling handles it.</li>
+        <li><strong>Single-host development.</strong> A 4090 in your desk lets you prototype; you don't get a TPU under your desk (DGX Spark notwithstanding).</li>
+        <li><strong>Software ecosystem.</strong> CUDA has 18 years of accumulated tooling, libraries, examples, talks, books. TPU has ~10 years of equivalent and is much less popular outside Google.</li>
+        <li><strong>Custom kernels.</strong> Triton on GPU is more mature than Pallas on TPU. FlashAttention has shipped on GPU first every time. Cutting-edge research kernels appear on GPU first.</li>
+        <li><strong>Heterogeneous workloads.</strong> The same H100 runs your inference, your training, your video transcoding, your scientific HPC code, your particle simulation. A TPU runs ML.</li>
+        <li><strong>On-prem availability.</strong> You can buy a server with H100s and put it in your datacenter. You cannot buy a server with TPUs.</li>
+        <li><strong>Multi-vendor optionality.</strong> AMD MI300X, Intel Gaudi 3, and others share the GPU programming model. TPU has one vendor, one cloud.</li>
+    </ul>
+</section>
+
+<section class="slide" id="slide-10">
+    <div class="slide-number">10</div>
+    <h2>The Cloud-Only Constraint</h2>
+    <p>The single biggest TPU disadvantage is not technical &mdash; it's commercial. <strong>You can only get TPUs through Google Cloud.</strong></p>
+
+    <div class="diagram-grid cols-2">
+        <div class="col tpu">
+            <h4>What this prevents</h4>
+            <ul>
+                <li>On-prem deployment by enterprises with strict data-residency requirements.</li>
+                <li>Air-gapped national-security workloads.</li>
+                <li>"Run it in our datacenter for compliance reasons."</li>
+                <li>Multi-cloud architectures that require the same chip everywhere.</li>
+                <li>Long-lived hardware ownership (you can reserve, but not buy outright).</li>
+            </ul>
+        </div>
+        <div class="col gpu">
+            <h4>What GPUs offer instead</h4>
+            <ul>
+                <li>Buy from any OEM, ship to any datacenter, run any workload.</li>
+                <li>Full on-prem operation, including air-gapped.</li>
+                <li>Workstation form factors (RTX, RTX Pro) for individual researchers.</li>
+                <li>DGX Spark / DGX Station for small-team / desk-side use.</li>
+                <li>Resale value: a 3-year-old H100 still has a market.</li>
+            </ul>
+        </div>
+    </div>
+
+    <h3>Why Google won't sell TPUs</h3>
+    <p>Three plausible reasons: (1) <em>strategic</em> &mdash; the TPU is a Google Cloud differentiator, selling them externally would dilute that; (2) <em>operational</em> &mdash; the TPU's pod-scale infrastructure (cooling, OCS, Pathways orchestration) requires Google datacenter expertise; (3) <em>economic</em> &mdash; selling chips at scale is a much lower-margin business than renting compute. Google has historically chosen rent over sell at every fork.</p>
+
+    <div class="callout">
+        <div class="callout-label">A 2026 wrinkle</div>
+        <p>Through 2025 there were rumours that Google was considering selling TPUs to non-cloud customers, particularly hyperscalers (Meta, Apple). As of May 2026 nothing has shipped, but the strategic discussion is live. Even if it happens, on-prem TPU is a long way away &mdash; the operational complexity of a v5p / Ironwood pod is not retail-ready.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-11">
+    <div class="slide-number">11</div>
+    <h2>Convergence in 2026</h2>
+    <p>Every architectural difference between TPUs and modern GPUs is narrower than it was five years ago.</p>
+
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Dimension</th><th>2018</th><th>2026</th></tr></thead>
+            <tbody>
+                <tr><td>Compute primitive</td><td>TPU MXU vs FP32 SIMD</td><td>TPU MXU vs GPU tensor cores &mdash; both are dedicated matmul accelerators</td></tr>
+                <tr><td>Memory model</td><td>Scratchpad vs cache</td><td>TPU adds CMEM cache; GPU adds TMA scratchpad-like behaviour</td></tr>
+                <tr><td>Compilation</td><td>XLA whole-graph vs CUDA per-kernel</td><td>XLA still wins on graphs; <code>torch.compile</code> closing the gap</td></tr>
+                <tr><td>Numerics</td><td>bf16-only on TPU vs FP16 on GPU</td><td>Both: bf16, INT8, FP8 (TPU just added; GPU also has FP4)</td></tr>
+                <tr><td>Pod fabric</td><td>2D torus 256 vs 8-GPU server</td><td>3D torus + OCS 9,216 vs NVL72 + InfiniBand</td></tr>
+                <tr><td>Numerical determinism</td><td>TPU yes, GPU no</td><td>TPU yes (mostly), GPU close (deterministic mode in cuBLAS / cuDNN)</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h3>What still divides them</h3>
+    <ul>
+        <li><strong>Pod scale.</strong> 9,216-chip ICI domain vs 72-GPU NVLink domain. Two orders of magnitude.</li>
+        <li><strong>Software ecosystem.</strong> CUDA's installed base is enormous and still growing.</li>
+        <li><strong>Vendor strategy.</strong> Google: one cloud, integrated stack. NVIDIA: many platforms, broad toolchain.</li>
+        <li><strong>Distribution.</strong> TPU only on GCP; GPUs everywhere.</li>
+    </ul>
+
+    <p>For a frontier-training organisation in 2026 with the option to rent either, the choice often comes down to <em>who's already running which stack</em>. Google trains on TPUs because it built them; xAI trains on H100/H200 because Elon Musk bought a hundred thousand. Anthropic trains on TPUs (via Google Cloud); OpenAI on NVIDIA. Each has good engineering reasons. Both stacks work.</p>
+</section>
+
+<section class="slide" id="slide-12">
+    <div class="slide-number">12</div>
+    <h2>Cheat Sheet</h2>
+    <ul>
+        <li><strong>Compute granularity:</strong> TPU = a few huge MXUs (8 systolic arrays of 16,384 MACs). GPU = many small SMs (132 on H100, 208 on B200).</li>
+        <li><strong>Scheduling:</strong> TPU = static, compiler-issued VLIW. GPU = dynamic, hardware warp scheduler. TPU is deterministic; GPU is more flexible.</li>
+        <li><strong>Memory:</strong> TPU = software-managed VMEM + cache-like CMEM. GPU = L1/L2 cache + shared memory + register file. The two architectures are converging.</li>
+        <li><strong>Compilation:</strong> TPU = whole-graph AOT via XLA, with cross-kernel fusion. GPU = per-kernel JIT via cuBLAS/cuDNN/Triton, with <code>torch.compile</code> closing the gap.</li>
+        <li><strong>Pod fabric:</strong> TPU = 9,216-chip 3D-torus + OCS, custom ICI. GPU = 72-GPU NVL72 + InfiniBand fat-tree. Two orders of magnitude on scale-up size.</li>
+        <li><strong>Numerics:</strong> Google led on bf16 (TPU 2017, NVIDIA 2020). NVIDIA led on FP8 (Hopper 2022) and FP4 (Blackwell 2024). TPU follows by ~1 generation.</li>
+        <li><strong>TPU wins:</strong> dense matmul, pod-scale all-reduce, deterministic training, fleet inference of dense models, long-context KV at 192 GiB.</li>
+        <li><strong>GPU wins:</strong> sparse / irregular workloads, single-host development, software ecosystem, custom kernels, on-prem availability, multi-vendor.</li>
+        <li><strong>Cloud-only constraint:</strong> TPU only via Google Cloud. The single biggest non-technical disadvantage.</li>
+        <li><strong>2026 convergence:</strong> the two architectures are structurally closer than ever; the philosophical difference (chip-is-dumb-compiler-is-smart vs chip-is-smart-compiler-is-flexible) persists.</li>
+    </ul>
+
+    <div class="callout">
+        <div class="callout-label">End of the series</div>
+        <p>This is deck 12 of 12. You've now walked the TPU programme end to end &mdash; the 2013 napkin maths, the silicon, the systolic core, every generation through Ironwood, the optical interconnect, the software stack, and the architectural philosophy. For deeper context on the GPU side, see the companion <a href="https://github.com/BrendanJamesLynskey/LLM_Hub_NVIDIA_GPUs">NVIDIA GPU Architectures</a> series.</p>
+    </div>
+</section>
+
+<footer class="footer">
+    <p>Part of the <a href="https://github.com/BrendanJamesLynskey/LLM_Hub_Google_TPUs">Google TPUs</a> series. Sources: ISCA 2017 / 2021 / 2023 TPU papers; CACM 2020 v2/v3 paper; NVIDIA H100/B200 whitepapers; "Pathways" MLSys 2022; modal.com GPU glossary; SemiAnalysis tensor-core analysis.</p>
+</footer>
+
+</body>
+</html>
