@@ -161,9 +161,9 @@
             <h4>Many small SMs</h4>
             <ul>
                 <li>Per H100: 132 SMs, each with 4 tensor cores, plus FP/INT pipelines.</li>
-                <li>Per B200 (dual-die): 208 SMs total.</li>
+                <li>Per B200 (dual-die): 148 SMs total.</li>
                 <li>Tens of thousands of warps in flight across all SMs.</li>
-                <li>Each tensor core is a smaller MMA block (e.g. 16&times;16&times;16 on Hopper wgmma).</li>
+                <li>Each tensor core is a smaller MMA block (e.g. 64&times;N&times;16 per warp-group on Hopper wgmma).</li>
                 <li>Many small units &mdash; the philosophy is "have so many independent execution contexts that something is always ready".</li>
             </ul>
         </div>
@@ -224,8 +224,8 @@
         <div class="col gpu">
             <h4>Conventional cache hierarchy</h4>
             <ul>
-                <li>L1 / shared memory (192 KB per SM on H100): partly programmable, partly cache.</li>
-                <li>L2 (60 MB on H100, larger on B200): hardware-managed.</li>
+                <li>L1 / shared memory (256 KB per SM on H100): partly programmable, partly cache.</li>
+                <li>L2 (50 MB on H100, larger on B200): hardware-managed.</li>
                 <li>Working set discovered at runtime; cache fills on access.</li>
                 <li>Latency variable: hits are fast, misses are slow.</li>
                 <li>Generality wins: no compiler effort, any workload benefits from caching.</li>
@@ -423,14 +423,14 @@
         <li><strong>Distribution.</strong> TPU only on GCP; GPUs everywhere.</li>
     </ul>
 
-    <p>For a frontier-training organisation in 2026 with the option to rent either, the choice often comes down to <em>who's already running which stack</em>. Google trains on TPUs because it built them; xAI trains on H100/H200 because Elon Musk bought a hundred thousand. Anthropic trains on TPUs (via Google Cloud); OpenAI on NVIDIA. Each has good engineering reasons. Both stacks work.</p>
+    <p>For a frontier-training organisation in 2026 with the option to rent either, the choice often comes down to <em>who's already running which stack</em>. Google trains on TPUs because it built them; xAI trains on H100/H200 because Elon Musk bought a hundred thousand. Anthropic spreads its work across TPUs (via Google Cloud), AWS Trainium and NVIDIA GPUs; OpenAI on NVIDIA. Each has good engineering reasons. Both stacks work.</p>
 </section>
 
 <section class="slide" id="slide-12">
     <div class="slide-number">12</div>
     <h2>Cheat Sheet</h2>
     <ul>
-        <li><strong>Compute granularity:</strong> TPU = a few huge MXUs (8 systolic arrays of 16,384 MACs). GPU = many small SMs (132 on H100, 208 on B200).</li>
+        <li><strong>Compute granularity:</strong> TPU = a few huge MXUs (8 systolic arrays of 16,384 MACs). GPU = many small SMs (132 on H100, 148 on B200).</li>
         <li><strong>Scheduling:</strong> TPU = static, compiler-issued VLIW. GPU = dynamic, hardware warp scheduler. TPU is deterministic; GPU is more flexible.</li>
         <li><strong>Memory:</strong> TPU = software-managed VMEM + cache-like CMEM. GPU = L1/L2 cache + shared memory + register file. The two architectures are converging.</li>
         <li><strong>Compilation:</strong> TPU = whole-graph AOT via XLA, with cross-kernel fusion. GPU = per-kernel JIT via cuBLAS/cuDNN/Triton, with <code>torch.compile</code> closing the gap.</li>
